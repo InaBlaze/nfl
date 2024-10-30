@@ -1,0 +1,303 @@
+---
+title: "Project"
+author: "Norman Tam"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r libraries}
+library(tidyverse)
+library(ggplot2)
+library(faraway)
+library(lme4)
+library(RLRsim)
+library(plm)
+library(pbkrtest)
+library(dplyr)
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+ats <- read.csv("E:/school/mizzou/stat7520/project/nflspread10.csv")
+newats <- ats[ , c(-1, -2, -3, -18, -26)]
+ats2 <- filter(ats, ats$Yr > 2017)
+#newats <- ats[, c(7, 12, 21, 23, 24, 25)]
+#ats10 <- filter(ats, Team ifelse(ats$ATSWin >= 10)) 
+#ats1 <- ats[, c("Team", "Yr", "ATSWin")]
+#ats8 <- ats1[ats1$ATSWin >= 8,]
+```
+
+```{r Linear}
+modl <- lm(newats$ATSWin ~ ., newats)
+summary(modl)
+confint(modl)
+step(modl, type = "response", trace = FALSE)
+```
+```{r newlm}
+newmodl <- lm(formula = newats$ATSWin ~ PassG + QBR + Third + PR11.16 + ATSW + ATSLoss + AvgM, data = newats)
+
+summary(newmodl)
+
+```
+
+```{r qqplots}
+qqplot(x = ats$QBR, y = ats$ATSWin)
+qqplot(x = ats$YardsG, y = ats$ATSWin)
+qqplot(x = ats$Sacks, y = ats$ATSWin)
+qqplot(x = ats$Third, y = ats$ATSWin)
+qqplot(x = ats$PossG, y = ats$ATSWin)
+qqplot(x = ats$PtsG, y = ats$ATSWin)
+qqplot(x = ats$PR.1.5, y = ats$ATSWin)
+plot(ats$ATSWin)
+hist(ats$ATSWin, labels = TRUE)
+ggplot(ats, aes(x = Yr, y = ATSWin, color = "Arizona")) + geom_line()
+```
+ 
+```{r Poisson}
+modp <- glm(newats$ATSWin ~ ., family = poisson(), newats)
+summary(modp)
+drop1(modp, test = "F", trace = FALSE)
+modpr <- step(modp, trace = FALSE)
+summary(modpr)
+predict(modpr, type = "response")[1:5]
+residuals(modpr, type = "response")[1:5]
+#residuals(modpr, type = "response")*16
+
+
+modn <- glm(newats$ATSWin ~ ats$QBR + ats$RushP + ats$PtsG + ats$PassG, family = poisson, newats)
+summary(modn)
+anova(modn, modp, test = "Chi")
+
+predp <- predict(modp, type = "response")
+```
+```{r Binomial}
+
+lmod <- glm(cbind(newats$ATSWin, newats$ATSLoss) ~ ., newats, family = binomial)
+summary(lmod)
+plot(lmod)
+predl <- predict(lmod, type = "response")
+ats <- mutate(ats, predout = ifelse(predl >= .5, "yes", "no"))
+xtabs( ~ ats$ATSWin + predout, ats)
+table(ats$ATSWin)
+#plot(lmod, ats$ATSWin ~ fitted(.)|ats$Team, abline = c(0,1))
+
+modl4 <- glm(cbind(ats$ATSWin, ats$ATSLoss) ~ ats$Team, family = binomial, newats)
+atsf <- data.frame(ats$ATSWin == c(1:16))
+predict(modl4, atsf, type = "response")
+fitted(lmod)[1:5]
+predict(lmod)[1:5] |> exp()
+
+atsn <- data.frame(ats$ATSWin, ats)
+atsp <- predict(lmod, atsn)
+xtabs(ats$ATSWin ~ ats$TOM, ats)
+drop1(lmod, test = "F", trace = FALSE)
+
+#probability of model response variable and deviations of residuals, smaller residuals the better
+#newdata <- with(newats, data.frame(ATSWin = c(1, 16))
+#modp <- predict(lmod, newdata, type = "response")
+#table(ats$ATSWin, modp)
+residuals(lmod, type = "response")[1:5]
+#residuals(lmod, type = "response")*16
+
+#deviance divided by degrees of freedom > 1 means model does not #fit
+
+d <- deviance(lmod)/(544 - 25)
+#lmodpr <- step(lmod)
+#summary(lmodpr)
+
+lmod2 <- glm(cbind(newats$ATSWin, newats$ATSLoss) ~ PtsG + ATS + RZ, family = binomial, newats)
+anova(lmod2, lmod, test = "Chi")
+
+lmod3 <- glm(cbind(ats$ATSWin, ats$ATSLoss) ~ Yr + YardsG + QBR + Sacks + Third + PtsG + AvgM + TOM + RZ, family = binomial, ats)
+summary(lmod3)
+lmod4 <- glm(cbind(ats$ATSWin, ats$ATSLoss) ~ Yr + YardsG + Sacks + PtsG + AvgM + TOM + RZ, family = binomial, ats)
+summary(lmod4)
+anova(lmod3, lmod4, test = "Chi")
+```
+
+
+
+```{r tests}
+deviance(lmod)
+df.residual(lmod)
+pchisq(deviance(lmod), df.residual(lmod), lower = FALSE)
+pchisq(470.38-310.20, 1, lower=FALSE)
+deviance(modpr)
+df.residual(modpr)
+pchisq(deviance(modpr), df.residual(modpr), lower = FALSE)
+pchisq(245.91 - 165.76, 1, lower=FALSE)
+confint(lmod)
+confint(modp)
+confint(modl)
+```
+
+```{r logit}
+plot(ats$ATSWin/16, ats$PtsG, xlim = c(10, 40), ylim = c(0, 1), xlab = "Points/Game", ylab = "Prob of ATSWin")
+
+ilogit(-48.51 - 0.01720*1)
+
+#empirical logit to find overdispersion
+elogits <- with(ats, log((ats$ATSWin + 0.5)/(16 - ats$ATSWin + 0.5)))
+with(ats, interaction.plot(ats$ATSWin, ats$Team, elogits))
+
+(sigma2 <- sum(residuals(lmod, type = "pearson")^2)/519)
+drop1(lmod, scale=sigma2, test="F")
+summary(lmod, dispersion = sigma2)
+  
+#Picture of the RE observations
+
+ats %>%
+  ggplot(aes(Yr, ATSWin, group = Team)) +
+  geom_line(alpha = 0.3) 
+```
+
+```{r Panel}
+#RE Model
+rmod <- lmer(ATSWin ~ 1 + (1 | Team) + PassG + PtsG + AvgM + TOM + RZ, ats)
+summary(rmod)
+
+#Variability is attributable within teams than between teams
+icc <- 0.004124/(0.004124 + 2.317753)
+icc
+
+lrmod <- lmer(ATSWin ~ 1 + (1 | Team) + Yr + PassG + PtsG + AvgM + TOM + RZ, data = ats)
+summary(lrmod)
+
+
+KRmodcomp(rmod, lrmod)
+#Random Slope Model
+
+rslope <- lmer(ATSWin ~ (PassG | Team) + Yr + PassG + PtsG + AvgM + TOM + RZ, ats)
+summary(rslope)
+
+ats$fitted_values = fitted(rslope)
+ats %>%
+  filter(Team %in% c("San Francisco", "Arizona", "Seattle", "L.A. Rams")) %>%
+  ggplot(aes(x = Yr, y = ATSWin, group = Team)) +
+  geom_point() + geom_path(alpha = .4) +
+  labs(x = "Year", y = "Point Spread", title = "ATS Wins") +
+  stat_smooth(method = "lm", aes(group = NULL), se = FALSE, color = 'red', size = 1.1) +
+  geom_line(aes(y = fitted_values), color = "blue", alpha = .3)
+
+#FE Model
+fmod <- lmer(ats$ATSWin ~ 1 + (1 | ats$Team), newats, REML = FALSE)
+summary(fmod)
+```
+
+```{r sim}
+#p-value > 1 means there is no random effect in the model
+
+nmod <- lm(ats$ATSWin ~ 1, newats)
+lr <- (2*(logLik(rmod) - logLik(nmod)))
+pvalue <- pchisq(lr, 1, lower = FALSE)
+data.frame(lr, pvalue)
+
+#bootstrapping simulation
+y <- simulate(nmod)
+lrstat <- numeric(1000)
+set.seed(123)
+for(i in 1:1000) {
+  
+  y <- unlist(simulate(nmod))
+  bnull <- lm(y ~ 1)
+  balt <- lmer(y ~ 1 + (1 | ats$Team), ats, REML = FALSE)
+  lrstat[i] <- as.numeric((2*(logLik(balt) - logLik(bnull))))
+}
+```
+
+```{r testpanel}
+#Likelihood Ratio Test
+
+par(mfrow = c(2, 1))
+#boxplot(lrstat, horizontal = TRUE)
+simChiSq <- rchisq(n = 1000, df = 1)
+#boxplot(simChiSq, horizontal = TRUE)
+
+mean(lrstat > -2.56403)
+sqrt((1 * 0.08783)/1000)
+
+exactLRT(fmod, nmod)
+exactRLRT(rmod)
+
+ranef(rmod)$Team
+#cc <- model.tables()
+
+fixef(rmod)
+predict(rmod, re.form  = ~0)
+
+#fixef(rmod) + ranef((rmod)$Team, Team = "a")
+```
+
+```{r misc panel}
+#PLM Model
+
+atsp <- pdata.frame(ats, index = "Team")
+fe <- plm(ATSWin ~ Yr + PassG + PtsG + AvgM + TOM + RZ, data = atsp, index = "Team", model = "within")
+summary(fe)
+re <- plm(ATSWin ~ Yr + PassG + PtsG + AvgM + TOM + RZ, data = atsp, index = c("Yr", "Team"), model = "random")
+summary(re)
+phtest(fe, re)
+
+#dummy var
+
+dummyvar = lm(ATSWin ~ factor(Team) + factor(Yr) + PassG + PtsG + AvgM + TOM + RZ, ats)
+summary(dummyvar)
+
+#within estimator
+atsn <- ats[ , c(1:2, 4:12, 19:25)]
+within = plm(ATSWin ~ . + factor(Yr), data = atsn, index = "Team", model = "within")
+summary(within)
+```
+
+```{r TS}
+
+dt <- diff(time(ats$ATSWin))[1]
+
+time_steps <- max(time(ats$ATSWin)) + (1:17) * dt
+
+armaats <- arima(ats[, "ATSWin"], order = c(1, 0, 1))
+
+armaapred <- predict(armaats, n.ahead = 17)$pred
+
+plot.ts(ats[ , 21], xlim = c(2006, 2022))
+lines(x = time_steps, y = armaapred)
+
+acf(resid(armaats))
+library(forecast)
+fit_AR <- auto.arima(ats$ATSWin, approximation = FALSE, stationary = TRUE)
+summary(fit_AR)
+```
+
+```{r RE 2}
+
+rmod <- lmer(ATSWin ~ 1 + (1 | Team) + PassG + PtsG + AvgM + TOM + RZ, ats2)
+summary(rmod)
+
+modl <- glm(cbind(ats2$ATSWin, ats2$ATSLoss) ~ Team + PtsG + AvgM + TOM + RZ, family = binomial, ats2)
+
+summary(modl)
+
+ggplot(ats, aes(x = Yr, y = ATSWin)) +
+  #geom_line(aes(group = Team)) +
+  geom_point(aes(fill = as.factor(Team)), pch = 21, size = 1, stroke = 1)
+
+
+```
+
+```{r Logistic}
+
+ats$ATSWin2 <- ifelse(ats$ATSWin >= 8, 1, 0)
+
+modl <- glm(ats$ATSWin2 ~ Team + PtsG + AvgM + TOM + RZ, family = binomial, ats)
+
+summary(modl)
+
+atspred <- predict(modl, type = "response")
+
+table(atspred, ats$Team)
+
+
+```
